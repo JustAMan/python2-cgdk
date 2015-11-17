@@ -1,9 +1,18 @@
 import sys
+import time
+import socket
+import errno
 
 from MyStrategy import MyStrategy
 from RemoteProcessClient import RemoteProcessClient
 from model.Move import Move
 
+if sys.platform == 'win32':
+    ERRNO_REFUSED = errno.WSAECONNREFUSED
+    ERRNO_RESET = errno.WSAECONNRESET
+else:
+    ERRNO_REFUSED = errno.ECONNREFUSED
+    ERRNO_RESET = errno.ECONNRESET
 
 class Runner:
     def __init__(self):
@@ -11,7 +20,16 @@ class Runner:
             self.remote_process_client = RemoteProcessClient(sys.argv[1], int(sys.argv[2]))
             self.token = sys.argv[3]
         else:
-            self.remote_process_client = RemoteProcessClient("127.0.0.1", 31001)
+            for _ in xrange(20):
+                try:
+                    self.remote_process_client = RemoteProcessClient("127.0.0.1", 31001)
+                except socket.error as ex:
+                    if ex.errno == ERRNO_REFUSED:
+                        time.sleep(0.1)
+                        continue
+                    raise
+                else:
+                    break
             self.token = "0000000000000000"
 
     def run(self):
@@ -45,6 +63,11 @@ class Runner:
                     strategies[player_car.teammate_index].move(player_car, player_context.world, game, move)
 
                 self.remote_process_client.write_moves_message(moves)
+        except socket.error as ex:
+            if ex.errno != ERRNO_RESET:
+                raise
+        except KeyboardInterrupt:
+            pass
         finally:
             self.remote_process_client.close()
 
